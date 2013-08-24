@@ -213,13 +213,6 @@ class DcController extends StateMachine {
             boolean isAnyDataCallActive = false;
 
             for (DataCallResponse newState : dcsList) {
-                if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_UP) {
-                    isAnyDataCallActive = true;
-                }
-                if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_DORMANT) {
-                    isAnyDataCallDormant = true;
-                }
-
                 DataConnection dc = mDcListActiveByCid.get(newState.cid);
                 if (dc == null) {
                     // UNSOL_DATA_CALL_LIST_CHANGED arrived before SETUP_DATA_CALL completed.
@@ -307,6 +300,34 @@ class DcController extends StateMachine {
                             }
                         }
                     }
+                }
+
+                if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_UP) {
+                    isAnyDataCallActive = true;
+                }
+                if (newState.active == DATA_CONNECTION_ACTIVE_PH_LINK_DORMANT) {
+                    isAnyDataCallDormant = true;
+                }
+            }
+
+            if (isAnyDataCallDormant && !isAnyDataCallActive) {
+                // There is no way to indicate link activity per APN right now. So
+                // Link Activity will be considered dormant only when all data calls
+                // are dormant.
+                // If a single data call is in dormant state and none of the data
+                // calls are active broadcast overall link state as dormant.
+                if (DBG) {
+                    log("onDataStateChanged: Data Activity updated to DORMANT. stopNetStatePoll");
+                }
+                mDct.sendStopNetStatPoll(DctConstants.Activity.DORMANT);
+            } else {
+                if (DBG) {
+                    log("onDataStateChanged: Data Activity updated to NONE. " +
+                            "isAnyDataCallActive = " + isAnyDataCallActive +
+                            " isAnyDataCallDormant = " + isAnyDataCallDormant);
+                }
+                if (isAnyDataCallActive) {
+                    mDct.sendStartNetStatPoll(DctConstants.Activity.NONE);
                 }
             }
 
