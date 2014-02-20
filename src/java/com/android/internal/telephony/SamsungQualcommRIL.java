@@ -72,6 +72,7 @@ public class SamsungQualcommRIL extends QualcommMSIM42RIL implements CommandsInt
     private boolean oldRilState = needsOldRilFeature("exynos4RadioState");
     private boolean googleEditionSS = needsOldRilFeature("googleEditionSS");
     private boolean driverCall = needsOldRilFeature("newDriverCall");
+    private boolean dialCode = needsOldRilFeature("newDialCode");
     private String[] lastKnownOfGood = {null, null, null};
     public SamsungQualcommRIL(Context context, int networkMode,
             int cdmaSubscription) {
@@ -209,10 +210,12 @@ public class SamsungQualcommRIL extends QualcommMSIM42RIL implements CommandsInt
         // RIL_LTE_SignalStrength
         if (googleEditionSS && !isGSM){
             response[8] = response[2];
-        }else if (response[7] == 99) {
+        }else if ((response[7] & 0xff) == 255 || response[7] == 99) {
             // If LTE is not enabled, clear LTE results
             // 7-11 must be -1 for GSM signal strength to be used (see
             // frameworks/base/telephony/java/android/telephony/SignalStrength.java)
+            // make sure lte is disabled
+            response[7] = 99;
             response[8] = SignalStrength.INVALID;
             response[9] = SignalStrength.INVALID;
             response[10] = SignalStrength.INVALID;
@@ -427,7 +430,7 @@ public class SamsungQualcommRIL extends QualcommMSIM42RIL implements CommandsInt
             Rlog.d(RILJ_LOG_TAG, "setWbAmr(): setting audio parameter - wb_amr=on");
             mAudioManager.setParameters("wide_voice_enable=true");
         }else if (state == 0) {
-            Rlog.d(RILJ_LOG_TAG, "setWbAmr(): setting audio parameter - wb_amr=on");
+            Rlog.d(RILJ_LOG_TAG, "setWbAmr(): setting audio parameter - wb_amr=off");
             mAudioManager.setParameters("wide_voice_enable=false");
         }
         //prevent race conditions when the two meeets
@@ -539,5 +542,33 @@ public class SamsungQualcommRIL extends QualcommMSIM42RIL implements CommandsInt
         }
 
         return super.responseSMS(p);
+    }
+    @Override
+    public void
+    dial(String address, int clirMode, UUSInfo uusInfo, Message result) {
+        if(!dialCode){
+            super.dial(address, clirMode, uusInfo, result);
+            return;
+        }
+        RILRequest rr = RILRequest.obtain(RIL_REQUEST_DIAL, result);
+
+        rr.mParcel.writeString(address);
+        rr.mParcel.writeInt(clirMode);
+        rr.mParcel.writeInt(0);
+        rr.mParcel.writeInt(1);
+        rr.mParcel.writeString("");
+
+        if (uusInfo == null) {
+            rr.mParcel.writeInt(0); // UUS information is absent
+        } else {
+            rr.mParcel.writeInt(1); // UUS information is present
+            rr.mParcel.writeInt(uusInfo.getType());
+            rr.mParcel.writeInt(uusInfo.getDcs());
+            rr.mParcel.writeByteArray(uusInfo.getUserData());
+        }
+
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
+
+        send(rr);
     }
 }
